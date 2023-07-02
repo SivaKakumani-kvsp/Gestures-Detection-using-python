@@ -1,0 +1,191 @@
+import cv2
+import numpy as np
+import mediapipe as mp
+
+
+# Create an instance of the Hands model
+hand_instance = mp.solutions.hands
+
+
+# Initialize Mediapipe Hands model
+hands = hand_instance.Hands(static_image_mode=False, max_num_hands=2, min_detection_confidence=0.7, min_tracking_confidence=0.5)
+
+
+# Load the cascade classifier
+face_detector = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+
+# Open the video file
+cap = cv2.VideoCapture('final.mp4')
+
+# Get the frame rate of the video
+frame_rate = cap.get(cv2.CAP_PROP_FPS)
+print("Frame rate:", frame_rate)
+
+# Set the frame rate of the video
+cap.set(cv2.CAP_PROP_FPS, 30)
+
+# Get the total number of frames in the video
+num_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+print(num_frames)
+
+# Initialize variables for tracking the head position and shoulder positions
+head_pos = None
+lt_shoulder_frame = None
+rt_shoulder_frame = None
+
+
+# Loop through each frame in the video
+# Process each frame in the video
+for frame_num in range(num_frames):
+    
+    # Read the next frame
+    boolean, frame = cap.read()
+
+    # If there are no more frames, exit the loop
+    if not boolean:
+        break
+    # Convert frame to RGB for Mediapipe
+    rgb_frame_conv = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    
+    # Detect hands in the frame
+    had_detection = hands.process(rgb_frame_conv)
+    
+    # Draw bounding boxes around hands
+    if had_detection.multi_hand_landmarks:
+        for hand_landmarks in had_detection.multi_hand_landmarks:
+            # Get landmarks for the hand
+            landmarks = hand_landmarks.landmark
+            
+            a = min([landmark.x for landmark in landmarks])
+            b = min([landmark.y for landmark in landmarks])
+            c = max([landmark.x for landmark in landmarks])
+            d = max([landmark.y for landmark in landmarks])
+            # Get bounding box coordinates for the hand
+            left_coord = int(a * frame.shape[1])
+            top_coord = int(b * frame.shape[0])
+            right_coord = int(c * frame.shape[1])
+            bottom_coord = int(d * frame.shape[0])
+            
+            # Draw bounding box
+            cv2.rectangle(frame, (left_coord, top_coord), (right_coord, bottom_coord), (0, 255, 0), 2)
+
+    # Convert the frame to grayscale
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    # Detect faces in the frame
+    faces = face_detector.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
+
+    # If a face is detected, track its position
+    if len(faces) > 0:
+        # Use the first detected face
+        (x, y, w, h) = faces[0]
+
+        # Update the head position
+        head_pos = (x, y, w, h)
+        l = round(w/4)
+
+        # Calculate the position of the shoulders based on the head position
+        # we can adjust these values to fit the size and shape of your video frames
+        lt_shoulder_frame = (x - w // 2, y + h // 2)
+        rt_shoulder_frame = (x + w, y + h // 2)
+
+        # Extract the left and right shoulder regions only for frames
+    if lt_shoulder_frame is not None and rt_shoulder_frame is not None:
+        (x1, y1) = lt_shoulder_frame
+        (x2, y2) = rt_shoulder_frame
+        left_shoulder = frame[y1:y1+h, x1:x1+w//2]
+        right_shoulder = frame[y2:y2+h, x2:x2+w//2]
+
+        # Convert the shoulder regions to grayscale
+        left_shoulder_gray = cv2.cvtColor(left_shoulder, cv2.COLOR_BGR2GRAY)
+        right_shoulder_gray = cv2.cvtColor(right_shoulder, cv2.COLOR_BGR2GRAY)
+
+        # Reduce noise in the grayscale images
+        left_shoulder_blur = cv2.GaussianBlur(left_shoulder_gray, (5, 5), 0)
+        right_shoulder_blur = cv2.GaussianBlur(right_shoulder_gray, (5, 5), 0)
+
+        # Detect edges in the grayscale images using Canny edge detection
+        left_edges = cv2.Canny(left_shoulder_blur, 50, 150)
+        right_edges = cv2.Canny(right_shoulder_blur, 50, 150)
+
+        # Detect lines in the edge images using Hough lines
+        # here based on the video and edge detections we need to adjust the threshhold, minimum and maximum length of the line
+        left_lines = cv2.HoughLinesP(left_edges, rho=1, theta=np.pi/180, threshold=35, minLineLength=30, maxLineGap=20)
+        right_lines = cv2.HoughLinesP(right_edges, rho=1, theta=np.pi/180, threshold=35, minLineLength=30, maxLineGap=20)
+
+        # Combine the left and right lines into a single list of lines
+        lines = []
+        if left_lines is not None:
+            lines.extend(left_lines)
+        if right_lines is not None:
+            lines.extend(right_lines)
+        print(lines)
+
+        # Define the range of slopes for the shoulder lines
+        shoulder_slope_min = -5.0
+        shoulder_slope_max = 0.0
+        previous_slope_left = 0
+        previous_slope_right = 0
+        shrug_detected = False
+
+        # Draw the lines as contours on the shoulder regions(right as left - mirroring)
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+
+            slope = (y2 - y1) / (x2 - x1)
+            print(slope)
+            print(slope-previous_slope_left)
+            print("==========================")
+            if abs(slope - previous_slope_left) > 0.9:
+                shrug_detected = True
+
+            # Update previous slope
+            previous_slope_left = slope
+            if shoulder_slope_min <= slope <= shoulder_slope_max:
+                m1 = (y2-y1)/(x2-x1)
+                cv2.line(left_shoulder, (x1, y1), (x2, y2), (0, 0, 255), 2)
+
+        shoulder_slope_min = 0.0
+        shoulder_slope_max = 5
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            slope = (y2 - y1) / (x2 - x1)
+
+            # Check if slope has changed significantly
+            print(slope-previous_slope_right)
+            print("==========================")
+            if abs(slope - previous_slope_right) > 0.9:
+                shrug_detected = True
+
+            # Update previous slope
+            previous_slope_right = slope
+            if shoulder_slope_min <= slope <= shoulder_slope_max:
+                cv2.line(right_shoulder, (x1, y1), (x2, y2), (0, 0, 255), 2)
+         #Add text indicating whether a shrug was detected in the current frame
+        if shrug_detected:
+            cv2.putText(frame, f"Shrug detected in frame {frame_num}", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (252, 3, 215), 2)
+
+        # Reset shrug_detected flag for next frame
+        shrug_detected = False
+        
+        # Draw rectangles around the head and shoulders and indicate shoulder shrugging
+        if head_pos is not None:
+            # Draw a rectangle around the head
+            (x, y, w, h) = head_pos
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
+
+            # Draw rectangles around the left and right shoulders
+    #         if lt_shoulder_frame is not None:
+    #             (x, y) = lt_shoulder_frame
+    #             cv2.rectangle(frame, (x, y), (x + w // 2, y + h), (255, 0, 0), 2)
+    #         if rt_shoulder_frame is not None:
+    #             (x, y) = rt_shoulder_frame
+    #             cv2.rectangle(frame, (x, y), (x + w//2, y + h), (0, 0, 255), 2)
+
+        # Display the frame
+        cv2.imshow("Video", frame)
+        cv2.waitKey(1)
+    
+# Release the video capture object and close the window
+cap.release()
+cv2.destroyAllWindows()
