@@ -4,7 +4,7 @@ Project Title: Detecting shoulder, hands, and face moments
 
 Description: This project is designed to analyze videos and extract meaningful information related to human body language. It specifically focuses on detecting and tracking head and hand positions, identifying shoulder lines, and recognizing shoulder shrugging events within the video content.
 
-How It Works:
+# How It Works:
 Input Video: The project takes as input a video file (e.g., final.mp4) placed in the project directory.
 
 Video Processing: The Python script utilizes several libraries and techniques to analyze the video frame by frame:
@@ -25,7 +25,7 @@ Colored lines indicating the position of the shoulder lines.
 Text overlaid on frames where shoulder shrugging is detected.
 Customization: Users have the flexibility to customize the script's parameters and thresholds to adapt it to different video characteristics or scenarios.
 
-Usefulness:
+# Usefulness:
 Body Language Analysis: This project can be valuable for researchers, therapists, or anyone interested in analyzing body language cues in video content. It provides a visual representation of hand and head movements, aiding in the study of non-verbal communication.
 
 Gesture Recognition: By tracking hand movements, it can be used for recognizing and interpreting gestures made by individuals in videos, which could be useful in various applications, including sign language interpretation.
